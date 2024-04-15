@@ -1,0 +1,118 @@
+import pypandoc, pdfkit, tempfile, os, sys, ctypes, time, chardet, re 
+ 
+# Переменные 
+ver = '1.0.0' 
+ 
+# задаём заголовок окна приложения 
+ctypes.windll.kernel32.SetConsoleTitleW('Конвертер TEX/MD в PDF v' + ver) 
+ 
+# узнаём директорию где лежит выполняемый py или exe файл 
+if getattr(sys, 'frozen', False): 
+    dir_path = os.path.dirname(sys.executable) 
+else: 
+    dir_path = os.path.dirname(os.path.abspath(__file__)) 
+ 
+# Указываем путь к wkhtmltopdf.exe, т.е. он не находит его в окружении системы 
+config = pdfkit.configuration(wkhtmltopdf='c:\\Program Files\\wkhtmltopdf\\bin\\wkhtmltopdf.exe') 
+ 
+# Указываем путь к каталогу, в который будут поступать tex и md, если каталога нет, то создаём его 
+input_folder = os.path.join(dir_path, 'input') 
+if not os.path.exists(input_folder): 
+    os.makedirs(input_folder) 
+ 
+# Указываем путь к каталогу, в который будут сохранятся pdf, если каталога нет, то создаём его 
+output_folder = os.path.join(dir_path, 'output') 
+if not os.path.exists(output_folder): 
+    os.makedirs(output_folder) 
+ 
+# Анализируем кодировку файла перед открытием 
+def open_file_with_auto_encoding(file_path): 
+    with open(file_path, 'rb') as f: 
+        raw_data = f.read() 
+        encoding = chardet.detect(raw_data)['encoding'] 
+ 
+    with open(file_path, 'r', encoding=encoding) as f: 
+        return f.read() 
+ 
+# Функция конвертирования файла LaTeX в PDF 
+def convert_latex_to_pdf(latex_file, output_pdf): 
+    latex_content = open_file_with_auto_encoding(latex_file) 
+ 
+    # Убираем строки, с которыми не справляется конвертер pypandoc 
+    latex_content = re.sub(r'\\def\\.*', '', latex_content, flags=re.MULTILINE) 
+    latex_content = latex_content.replace('\\vskip10ex', '') 
+ 
+    # Создаём временный файл с CSS стилем 
+    with tempfile.NamedTemporaryFile(mode='w', delete=False) as css_file: 
+        css = 'body { font-family: Arial; }'  # Указываем шрифт Arial 
+        css_file.write(css) 
+        css_file.flush() 
+ 
+        # Конвертация HTML в PDF с указанием CSS файла 
+        html_content = pypandoc.convert_text(latex_content, 'html5', format='latex') 
+        options = { 
+            'encoding': "UTF-8", 
+            'custom-header': [ 
+                ('Accept-Encoding', 'gzip') 
+            ], 
+            'no-outline': None, 
+            'enable-local-file-access': None, 
+            'quiet': '' 
+        } 
+        pdfkit.from_string(html_content, output_pdf, configuration=config, options=options, css=css_file.name) 
+ 
+# Функция конвертирования файла Markdown в PDF 
+def convert_markdown_to_pdf(markdown_file, output_pdf): 
+    markdown_content = open_file_with_auto_encoding(markdown_file) 
+ 
+    
+ 
+    # Создание временного файла с CSS стилем 
+    with tempfile.NamedTemporaryFile(mode='w', delete=False) as css_file: 
+        css = 'body { font-family: Arial; }'  # Указываем шрифт Arial 
+        css_file.write(css) 
+        css_file.flush() 
+ 
+        # Конвертация HTML в PDF с указанием CSS файла 
+        options = { 
+            'encoding': "UTF-8", 
+            'custom-header': [ 
+                ('Accept-Encoding', 'gzip') 
+            ], 
+            'no-outline': None, 
+            'enable-local-file-access': None, 
+            'quiet': '' 
+        } 
+        pdfkit.from_string(html_content, output_pdf, configuration=config, options=options, css=css_file.name) 
+ 
+# Обработка файлов с расширениями .tex и .md 
+def process_files(file_paths): 
+    for file_path in file_paths: 
+        if file_path.endswith('.tex'): 
+            print(f"Найден .tex файл: {file_path}") 
+            # Отделяем имя файла от его расширения и конвертируем в pdf 
+            pdf_file_name, file_extension = os.path.splitext(os.path.basename(file_path)) 
+            convert_latex_to_pdf(file_path, os.path.join(output_folder, pdf_file_name + '.pdf')) 
+ 
+        elif file_path.endswith('.md'): 
+            print(f"Найден .md файл: {file_path}")
+# Отделяем имя файла от его расширения и конвертируем в pdf 
+            pdf_file_name, file_extension = os.path.splitext(os.path.basename(file_path)) 
+            convert_markdown_to_pdf(file_path, os.path.join(output_folder, pdf_file_name + '.pdf')) 
+ 
+# Сканирование директории на файлы *.md и *.tex раз в 5 сек 
+def scan_directory(directory): 
+    processed_files = [] 
+    while True: 
+        new_files = [] 
+        for filename in os.listdir(directory): 
+            file_path = os.path.join(directory, filename) 
+            if os.path.isfile(file_path) and file_path not in processed_files: 
+                new_files.append(file_path) 
+        if new_files: 
+            process_files(new_files) 
+            processed_files.extend(new_files) 
+        time.sleep(5)  # Пауза в 5 секунд перед следующей проверкой 
+ 
+# Запускаем сканирование директории 
+scan_directory(input_folder)
